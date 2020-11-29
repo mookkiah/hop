@@ -23,26 +23,42 @@
 package org.apache.hop.pipeline.transforms.cassandrainput;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-
-import org.pentaho.cassandra.util.CassandraUtils;
-import org.pentaho.cassandra.ConnectionFactory;
-import org.pentaho.cassandra.spi.CQLRowHandler;
-import org.pentaho.cassandra.spi.ITableMetaData;
-import org.pentaho.cassandra.spi.Connection;
-import org.pentaho.cassandra.spi.Keyspace;
-import org.pentaho.cassandra.util.Compression;
-import org.pentaho.di.core.exception.KettleException;
-import org.pentaho.di.core.row.RowMeta;
-import org.pentaho.di.core.util.Utils;
-import org.pentaho.di.i18n.BaseMessages;
-import org.pentaho.di.trans.Trans;
-import org.pentaho.di.trans.TransMeta;
-import org.pentaho.di.trans.step.BaseStep;
-import org.pentaho.di.trans.step.StepDataInterface;
-import org.pentaho.di.trans.step.StepInterface;
-import org.pentaho.di.trans.step.StepMeta;
-import org.pentaho.di.trans.step.StepMetaInterface;
+import org.apache.hop.core.ICheckResult;
+import org.apache.hop.core.SqlStatement;
+import org.apache.hop.core.exception.HopDatabaseException;
+import org.apache.hop.core.exception.HopException;
+import org.apache.hop.core.exception.HopTransformException;
+import org.apache.hop.core.exception.HopXmlException;
+import org.apache.hop.core.file.IHasFilename;
+import org.apache.hop.core.row.IRowMeta;
+import org.apache.hop.core.row.RowMeta;
+import org.apache.hop.core.util.Utils;
+import org.apache.hop.core.variables.IVariables;
+import org.apache.hop.databases.cassandra.ConnectionFactory;
+import org.apache.hop.databases.cassandra.spi.CQLRowHandler;
+import org.apache.hop.databases.cassandra.spi.Connection;
+import org.apache.hop.databases.cassandra.spi.ITableMetaData;
+import org.apache.hop.databases.cassandra.spi.Keyspace;
+import org.apache.hop.databases.cassandra.util.CassandraUtils;
+import org.apache.hop.databases.cassandra.util.Compression;
+import org.apache.hop.i18n.BaseMessages;
+import org.apache.hop.metadata.api.IHopMetadataProvider;
+import org.apache.hop.pipeline.DatabaseImpact;
+import org.apache.hop.pipeline.Pipeline;
+import org.apache.hop.pipeline.PipelineMeta;
+import org.apache.hop.pipeline.transform.BaseTransform;
+import org.apache.hop.pipeline.transform.ITransform;
+import org.apache.hop.pipeline.transform.ITransformData;
+import org.apache.hop.pipeline.transform.ITransformIOMeta;
+import org.apache.hop.pipeline.transform.ITransformMeta;
+import org.apache.hop.pipeline.transform.TransformMeta;
+import org.apache.hop.pipeline.transform.errorhandling.IStream;
+import org.apache.hop.resource.IResourceNaming;
+import org.apache.hop.resource.ResourceDefinition;
+import org.apache.hop.resource.ResourceReference;
+import org.w3c.dom.Node;
 
 /**
  * Class providing an input step for reading data from a table in Cassandra. Accesses the schema
@@ -51,15 +67,20 @@ import org.pentaho.di.trans.step.StepMetaInterface;
  * @author Mark Hall (mhall{[at]}pentaho{[dot]}com)
  * @version $Revision$
  */
-public class CassandraInput extends BaseStep implements StepInterface {
+public class CassandraInput extends BaseTransform<CassandraInputMeta, CassandraInputData> implements ITransformMeta<CassandraInput, CassandraInputData> {
 
   protected CassandraInputMeta m_meta;
   protected CassandraInputData m_data;
 
-  public CassandraInput( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr, TransMeta transMeta,
-      Trans trans ) {
+  public CassandraInput( TransformMeta stepMeta, 
+      CassandraInputMeta meta,
+      CassandraInputData data,
+      int copyNr, PipelineMeta transMeta,
+      Pipeline trans ) {
 
-    super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
+    super( stepMeta, meta, data, copyNr, transMeta, trans );
+    this.m_meta = meta;
+    this.m_data = data;
   }
 
   /** Connection to cassandra */
@@ -86,7 +107,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
   protected String m_tableName;
 
   @Override
-  public boolean processRow( StepMetaInterface smi, StepDataInterface sdi ) throws KettleException {
+  public boolean processRow( ITransformMeta smi, ITransformData sdi ) throws HopException {
 
     if ( !isStopped() ) {
 
@@ -121,7 +142,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
         String keyspaceS = environmentSubstitute( m_meta.getCassandraKeyspace() );
 
         if ( Utils.isEmpty( hostS ) || Utils.isEmpty( portS ) || Utils.isEmpty( keyspaceS ) ) {
-          throw new KettleException( "Some connection details are missing!!" ); //$NON-NLS-1$
+          throw new HopException( "Some connection details are missing!!" ); //$NON-NLS-1$
         }
 
         logBasic( BaseMessages.getString( CassandraInputMeta.PKG,
@@ -156,7 +177,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
           m_keyspace = m_connection.getKeyspace( keyspaceS );
         } catch ( Exception ex ) {
           closeConnection();
-          throw new KettleException( ex.getMessage(), ex );
+          throw new HopException( ex.getMessage(), ex );
         }
 
         // check the source table first
@@ -164,13 +185,13 @@ public class CassandraInput extends BaseStep implements StepInterface {
             CassandraUtils.getTableNameFromCQLSelectQuery( environmentSubstitute( m_meta.getCQLSelectQuery() ) );
 
         if ( Utils.isEmpty( m_tableName ) ) {
-          throw new KettleException( BaseMessages.getString( CassandraInputMeta.PKG,
+          throw new HopException( BaseMessages.getString( CassandraInputMeta.PKG,
               "CassandraInput.Error.NonExistentTable" ) ); //$NON-NLS-1$
         }
 
         try {
           if ( !m_keyspace.tableExists( m_tableName ) ) {
-            throw new KettleException(
+            throw new HopException(
                 BaseMessages
                     .getString(
                         CassandraInputMeta.PKG,
@@ -180,7 +201,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
         } catch ( Exception ex ) {
           closeConnection();
 
-          throw new KettleException( ex.getMessage(), ex );
+          throw new HopException( ex.getMessage(), ex );
         }
 
         // set up the output row meta
@@ -189,7 +210,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
 
         // check that there are some outgoing fields!
         if ( m_data.getOutputRowMeta().size() == 0 ) {
-          throw new KettleException( BaseMessages.getString( CassandraInputMeta.PKG,
+          throw new HopException( BaseMessages.getString( CassandraInputMeta.PKG,
               "CassandraInput.Error.QueryWontProduceOutputFields" ) ); //$NON-NLS-1$
         }
 
@@ -207,7 +228,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
           m_cassandraMeta = m_keyspace.getTableMetaData( m_tableName );
         } catch ( Exception e ) {
           closeConnection();
-          throw new KettleException( e.getMessage(), e );
+          throw new HopException( e.getMessage(), e );
         }
 
         initQuery();
@@ -217,7 +238,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
       try {
         outRowData = m_cqlHandler.getNextOutputRow( m_data.getOutputRowMeta(), m_outputFormatMap );
       } catch ( Exception e ) {
-        throw new KettleException( e.getMessage(), e );
+        throw new HopException( e.getMessage(), e );
       }
 
       if ( outRowData != null ) {
@@ -254,7 +275,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
   }
 
   @Override
-  public boolean init( StepMetaInterface stepMeta, StepDataInterface stepData ) {
+  public boolean init( ITransformMeta stepMeta, ITransformData stepData ) {
     if ( super.init( stepMeta, stepData ) ) {
       m_data = (CassandraInputData) stepData;
       m_meta = (CassandraInputMeta) stepMeta;
@@ -263,7 +284,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
     return true;
   }
 
-  protected void initQuery() throws KettleException {
+  protected void initQuery() throws HopException {
     String queryS = environmentSubstitute( m_meta.getCQLSelectQuery() );
     if ( m_meta.getExecuteForEachIncomingRow() ) {
       queryS = fieldSubstitute( queryS, getInputRowMeta(), m_currentInputRowDrivingQuery );
@@ -280,7 +301,7 @@ public class CassandraInput extends BaseStep implements StepInterface {
     } catch ( Exception e ) {
       closeConnection();
 
-      throw new KettleException( e.getMessage(), e );
+      throw new HopException( e.getMessage(), e );
     }
   }
 
@@ -293,23 +314,217 @@ public class CassandraInput extends BaseStep implements StepInterface {
   }
 
   @Override
-  public void dispose( StepMetaInterface smi, StepDataInterface sdi ) {
+  public void dispose( ITransformMeta smi, ITransformData sdi ) {
     try {
       closeConnection();
-    } catch ( KettleException e ) {
+    } catch ( HopException e ) {
       e.printStackTrace();
     }
   }
 
-  protected void closeConnection() throws KettleException {
+  protected void closeConnection() throws HopException {
     if ( m_connection != null ) {
       logBasic( BaseMessages.getString( CassandraInputMeta.PKG, "CassandraInput.Info.ClosingConnection" ) ); //$NON-NLS-1$
       try {
         m_connection.closeConnection();
         m_connection = null;
       } catch ( Exception e ) {
-        throw new KettleException( e.getMessage(), e );
+        throw new HopException( e.getMessage(), e );
       }
     }
+  }
+
+  @Override
+  public void analyseImpact(List<DatabaseImpact> arg0, PipelineMeta arg1, TransformMeta arg2,
+      IRowMeta arg3, String[] arg4, String[] arg5, IRowMeta arg6, IHopMetadataProvider arg7)
+      throws HopTransformException {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void cancelQueries() throws HopDatabaseException {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void check(List<ICheckResult> arg0, PipelineMeta arg1, TransformMeta arg2, IRowMeta arg3,
+      String[] arg4, String[] arg5, IRowMeta arg6, IVariables arg7, IHopMetadataProvider arg8) {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public ITransform createTransform(TransformMeta arg0, CassandraInputData arg1, int arg2,
+      PipelineMeta arg3, Pipeline arg4) {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public boolean excludeFromCopyDistributeVerification() {
+    // TODO Auto-generated method stub
+    return false;
+  }
+
+  @Override
+  public boolean excludeFromRowLayoutVerification() {
+    // TODO Auto-generated method stub
+    return false;
+  }
+
+  @Override
+  public String exportResources(IVariables arg0, Map<String, ResourceDefinition> arg1,
+      IResourceNaming arg2, IHopMetadataProvider arg3) throws HopException {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public String getActiveReferencedObjectDescription() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public String getDialogClassName() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public void getFields(IRowMeta arg0, String arg1, IRowMeta[] arg2, TransformMeta arg3,
+      IVariables arg4, IHopMetadataProvider arg5) throws HopTransformException {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public List<IStream> getOptionalStreams() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public TransformMeta getParentTransformMeta() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public String[] getReferencedObjectDescriptions() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public IRowMeta getRequiredFields(IVariables arg0) throws HopException {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public List<ResourceReference> getResourceDependencies(PipelineMeta arg0, TransformMeta arg1) {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public SqlStatement getSqlStatements(PipelineMeta arg0, TransformMeta arg1, IRowMeta arg2,
+      IHopMetadataProvider arg3) throws HopTransformException {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public IRowMeta getTableFields() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public CassandraInputData getTransformData() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public ITransformIOMeta getTransformIOMeta() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public String getXml() throws HopException {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public void handleStreamSelection(IStream arg0) {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public boolean hasChanged() {
+    // TODO Auto-generated method stub
+    return false;
+  }
+
+  @Override
+  public boolean[] isReferencedObjectEnabled() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public IHasFilename loadReferencedObject(int arg0, IHopMetadataProvider arg1, IVariables arg2)
+      throws HopException {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public void loadXml(Node arg0, IHopMetadataProvider arg1) throws HopXmlException {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void resetTransformIoMeta() {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void searchInfoAndTargetTransforms(List<TransformMeta> arg0) {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void setChanged() {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void setDefault() {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public void setParentTransformMeta(TransformMeta arg0) {
+    // TODO Auto-generated method stub
+    
+  }
+
+  @Override
+  public boolean supportsErrorHandling() {
+    // TODO Auto-generated method stub
+    return false;
   }
 }
