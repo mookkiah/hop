@@ -19,6 +19,12 @@ FROM openjdk:8-alpine
 LABEL maintainer="Apache Hop Team"
 # Argument Branch name, used to download correct version
 ARG BRANCH_NAME
+#Hop user an group for running container.
+ARG HOP_USER=hop
+ARG HOP_GROUP=hop
+ARG HOP_UID=1000
+ARG HOP_GID=1000
+
 ENV BRANCH_NAME=$BRANCH_NAME
 # path to where the artifacts should be deployed to
 ENV DEPLOYMENT_PATH=/opt/hop
@@ -72,27 +78,27 @@ RUN apk update \
   && mkdir ${DEPLOYMENT_PATH} \
   && mkdir ${VOLUME_MOUNT_POINT} \
   && adduser -D -s /bin/bash -h /home/hop hop \
-  && chown hop:hop ${DEPLOYMENT_PATH} \
-  && chown hop:hop ${VOLUME_MOUNT_POINT}
+  && chown ${HOP_USER}:${HOP_USER} ${DEPLOYMENT_PATH} \
+  && chown ${HOP_USER}:${HOP_USER} ${VOLUME_MOUNT_POINT}
 
 
 # copy the hop package from the local resources folder to the container image directory
-COPY --chown=hop:hop ./resources/get-hop.sh ${DEPLOYMENT_PATH}/get-hop.sh
-COPY --chown=hop:hop ./resources/run.sh ${DEPLOYMENT_PATH}/run.sh
-COPY --chown=hop:hop ./resources/load-and-execute.sh ${DEPLOYMENT_PATH}/load-and-execute.sh
+COPY --chown=${HOP_USER}:${HOP_USER} ./resources/get-hop.sh ${DEPLOYMENT_PATH}/get-hop.sh
+# TODO unzip and keep only the required files to reduce the size of the image.
+COPY --chown=${HOP_USER}:${HOP_USER} ./hop  ${DEPLOYMENT_PATH}/.
+COPY --chown=${HOP_USER}:${HOP_USER} ./resources/entrypoint.sh ${DEPLOYMENT_PATH}/entrypoint.sh
+COPY --chown=${HOP_USER}:${HOP_USER} ./resources/load-and-execute.sh ${DEPLOYMENT_PATH}/load-and-execute.sh
 
 
 # Fetch the specified hop version 
-RUN ${DEPLOYMENT_PATH}/get-hop.sh \
-  && chown -R hop:hop ${DEPLOYMENT_PATH}/hop \
-  && chmod 700 ${DEPLOYMENT_PATH}/hop/*.sh
+RUN  chmod 700 ${DEPLOYMENT_PATH}/*.sh
 
 EXPOSE 8080
 
 # make volume available so that hop pipeline and workflow files can be provided easily
 VOLUME ["/files"]
 USER hop
-ENV PATH=$PATH:${DEPLOYMENT_PATH}/hop
+ENV PATH=$PATH:${DEPLOYMENT_PATH}
 WORKDIR /home/hop
-# CMD ["/bin/bash"]
-ENTRYPOINT ["/bin/bash", "/opt/hop/run.sh"]
+CMD ["/bin/bash"]
+# ENTRYPOINT ["/bin/bash", "/opt/hop/entrypoint.sh"]

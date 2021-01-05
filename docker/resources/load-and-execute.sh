@@ -10,6 +10,7 @@
 set -Eeuo pipefail
 
 BASENAME="${0##*/}"
+echo $BASENAME
 
 log() {
     echo `date '+%Y/%m/%d %H:%M:%S'`" - ${1}"
@@ -36,18 +37,18 @@ write_server_config() {
 
 
 log "Registering project config with Hop"
-log "${DEPLOYMENT_PATH}/hop/hop-conf.sh --project=${HOP_PROJECT_NAME} --project-create --project-home='${HOP_PROJECT_DIRECTORY}' --project-config-file='${HOP_PROJECT_CONFIG_FILE_NAME}'"
+log "${DEPLOYMENT_PATH}/hop-conf.sh --project=${HOP_PROJECT_NAME} --project-create --project-home='${HOP_PROJECT_DIRECTORY}' --project-config-file='${HOP_PROJECT_CONFIG_FILE_NAME}'"
 
-${DEPLOYMENT_PATH}/hop/hop-conf.sh \
+${DEPLOYMENT_PATH}/hop-conf.sh \
 --project=${HOP_PROJECT_NAME} \
 --project-create \
 --project-home="${HOP_PROJECT_DIRECTORY}" \
 --project-config-file="${HOP_PROJECT_CONFIG_FILE_NAME}"
 
 log "Registering environment config with Hop"
-log "${DEPLOYMENT_PATH}/hop/hop-conf.sh --environment-create --environment=${HOP_ENVIRONMENT_NAME} --environment-project=${HOP_PROJECT_NAME} --environment-config-files='${HOP_ENVIRONMENT_CONFIG_FILE_NAME_PATHS}'"
+log "${DEPLOYMENT_PATH}/hop-conf.sh --environment-create --environment=${HOP_ENVIRONMENT_NAME} --environment-project=${HOP_PROJECT_NAME} --environment-config-files='${HOP_ENVIRONMENT_CONFIG_FILE_NAME_PATHS}'"
 
-${DEPLOYMENT_PATH}/hop/hop-conf.sh \
+${DEPLOYMENT_PATH}/hop-conf.sh \
 --environment=${HOP_ENVIRONMENT_NAME} \
 --environment-create \
 --environment-project=${HOP_PROJECT_NAME} \
@@ -57,11 +58,11 @@ if [ -z "${HOP_FILE_PATH}" ]
 then
     write_server_config
     log "Starting a hop-server on port 8080"
-    ${DEPLOYMENT_PATH}/hop/hop-server.sh /tmp/hopserver.xml
+    ${DEPLOYMENT_PATH}/hop-server.sh /tmp/hopserver.xml
 else
     
     log "Running a single hop workflow / pipeline (${HOP_FILE_PATH})"
-    ${DEPLOYMENT_PATH}/hop/hop-run.sh \
+    ${DEPLOYMENT_PATH}/hop-run.sh \
     --file=${HOP_FILE_PATH} \
     --project=${HOP_PROJECT_NAME} \
     --environment=${HOP_ENVIRONMENT_NAME} \

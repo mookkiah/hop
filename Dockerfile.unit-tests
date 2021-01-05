@@ -31,6 +31,8 @@ ARG JENKINS_GROUP=hop
 ARG JENKINS_UID=1000
 ARG JENKINS_GID=1000
 
+
+
 # any JRE settings you want to pass on
 # The “-XX:+AggressiveHeap” tells the container to use all memory assigned to the container. 
 # this removed the need to calculate the necessary heap Xmx
